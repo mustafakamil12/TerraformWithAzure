@@ -1,0 +1,6 @@
+version         = "1.27"
+subscription_id = "fa7fcc6e-4afc-4efe-9810-c457a5b9edc6"
+client_id       = "bd7c6f94-cdc6-4c9b-9ed1-b97f4c5e0aa2"
+client_secret   = "Aapn]Dp3NeYb8lOG/I@A5R6QLvBSwV=V"
+tenant_id       = "8c2e7d0f-164b-4e67-b55c-4b024f58732c"
+
