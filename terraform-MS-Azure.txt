@@ -43,10 +43,10 @@ iv. subscription_id --> subscription --> id
 
 provider "azurerm"{
     version         = "1.27"
-    client_id       = 
-    client_secret   = 
-    tenant_id       = 
-    subscription_id = 
+    client_id       = ""
+    client_secret   = ""
+    tenant_id       = ""
+    subscription_id = ""
 }
 
 - to set resources
@@ -55,6 +55,8 @@ resource "azurerm_resource_group" "web_server_rg" {
   name = "web-rg"
   location = "westus2"
 }
+
+- Azure Resources Groups are logical collections of virtual machines, storage accounts, virtual networks, web apps, databases, and/or database servers. Typically, users will group related resources for an application, divided into groups for production and non-production — but you can subdivide further as needed
 
 - after add all information above in main.tf
 - terraform init
@@ -101,7 +103,7 @@ variable "live"{
  
 - also we are going to use 2 other kind of variables
  iv. Environment  --> it will be useful for SPN and credentials.
- v. Precedence - command passed, environment & defaules  <-- priority of vars.
+ v. Precedence - command passed, environment & defaultes  <-- priority of vars.
 
 - ex: terraform apply -var-file "vars.tfvars" -var"server=web"
   - Explane: -var"server=web"  <-- over wright individual var.
