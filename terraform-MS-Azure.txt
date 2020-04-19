@@ -1,0 +1,1080 @@
+Terraform on Microsoft Azure
+----------------------------
+
+what we need:
+-------------
+
+1. Win 10 64 bit
+2. Terraform
+3. VSCode
+4. Azure Cli  --> will be used for --- pulling region info.
+									|- market place images.
+5. Git
+
+------
+
+- Tenant: is an orgnaization --> dedicated instance of Acitve directory
+- when an orgnaization created, AD will be created automatically.
+- all the idea behinde the AD is about the identification and authorizaion.
+- SPN: is a service principle name it's a type of application account in Azure AD provide authintication and identification for services in Azure, typically they used for automation tools, programatically access.
+- Subscriptions: it's an agree with microsoft services and the technical context in Azure.
+- it's tied to a single AD.
+- AD can be tied to multiple subscriptions
+- subscriptions is refers to the logical entity that provides entitlement to deploy and consume Azure resources.
+
+- now we need to create SPN:
+- --> Azure AD --> App Registration --> new registration --> Name: terraform
+- we need to capture:
+i: client_id
+ii: client_security --> Azure AD --> App Registration --> terraform --> certificate & resources --> new --> desc: terraform
+iii. tenant_id 
+iv. subscription_id --> subscription --> id
+
+					
+- at this point we create spn but we didn't give it any authority.
+- --> access control (IAM) --> add --> --- Role: contributer
+										|- Assign access to: Azure AD user, gorup ...
+										|- select: terraform 
+										
+
+- now we will check how to use provider:
+
+provider "azurerm"{
+    version         = "1.27"
+    client_id       = 
+    client_secret   = 
+    tenant_id       = 
+    subscription_id = 
+}
+
+- to set resources
+
+resource "azurerm_resource_group" "web_server_rg" {
+  name = "web-rg"
+  location = "westus2"
+}
+
+- after add all information above in main.tf
+- terraform init
+- terraform plan
+- terraform apply
+
+--------------------------------
+
+variables:
+
+- there's 3 types of variables 
+ i. strings
+ ii maps
+ iii. lists
+ 
+- ex:
+
+variable "server_name" {
+	default = "web_server"
+}
+
+variable "locations" {
+	type = "map"
+	default = {
+		location1 = "westus2"
+		location2 = "northeurope"
+	}
+}
+
+
+variable "subnets"{
+	type = "list"
+	default = ["10.0.1.10","10.0.1.11"]
+}
+
+variable "live"{
+	type = "string"
+	default = false
+}
+
+- we are going to use multiple files in our project
+ i. main.tf  --> main files
+ ii. terraform.tfvars or *.auto.tfvars --> variables files.
+ 
+- also we are going to use 2 other kind of variables
+ iv. Environment  --> it will be useful for SPN and credentials.
+ v. Precedence - command passed, environment & defaules  <-- priority of vars.
+
+- ex: terraform apply -var-file "vars.tfvars" -var"server=web"
+  - Explane: -var"server=web"  <-- over wright individual var.
+  
+- to access terraform console. --> terraform console
+- in the console we can try how to call variables.
+> "${var.server_name}"
+> "${var.locations["location1"]}"
+> "${var.subnets[0]}"
+> "${var.live}"
+
+- now if u remember all required creds had been stored in main.tf and this is wrong.
+- we can use environment variables not system environment variables.
+- any variable will be defined must start with "TF_VAR_*"
+- go to system properties --> environment variables --> new
+- so we will have the environment variables as below:
+	TF_VAR_subscription_id
+	TF_VAR_client_id
+	TF_VAR_client_secret
+	TF_VAR_tenant_id
+	
+-------------------------------
+Interpolation:
+-------------
+- will be used for the stuff below:
+i. variables
+ii. resources
+iii. data
+iv. wrapped in --> "${}"
+
+ex: 
+
+name 				= "${var.web_server_name}
+resource_group_name = "${azurerm_resource_group.web_server_rg.name}
+subnet_id 			= "${azurerm_subnet.web_server_subnet.id}
+resource_group_name = "${data.azurerm_resource_group.web_server_rg.name}
+
+- now after we add all required creds to the environment we will change the main.tf as below:
+
+variable	"subscription_id" {}
+variable	"client_id" {}
+variable	"client_secret" {} 
+variable	"tenant_id" {}
+
+provider "azurerm" {
+    version         = "1.27"
+    subscription_id = "${var.subscription_id}"
+    client_id       = "${var.client_id}"
+    client_secret   = "${var.client_secret}"
+    tenant_id       = "${var.tenant_id}"
+}
+
+- terraform init
+- terraform plan
+- terraform apply
+- terraform destroy
+
+--------------------
+Azure Locations:
+
+- for this purpose we are going to use Azure Cli
+
+> az login --service-principal -u %TF_VAR_client_id% -p %TF_VAR_client_secret% -t %TF_VAR_tenant_id%
+
+- u can save the command above in a file "authinticate.cmd" for another use
+
+- if the command above didn't work because of proxy u can create environment variable --> AZURE_CLI_DISABLE_CONNECTION_VERIFICATION=1
+
+- now to get location table
+> az account list-locations -o table
+
+---------------------
+
+Azure resource group:
+- it's logical resource grouping, by region, network, type etc.
+- we are going to use region grouping
+
+- we will create a file "terraform.tfvars
+	web_server_location	= "westus2"
+	web_server_rg			= "web-rg"
+
+- now we need to add these variables to the main body.
+
+variable "web_server_location" {}
+variable "web_server_rg" {}
+
+----------------------
+
+Azure VNET:
+
+- we will add some parameters in "terraform.tfvars"
+	resource_prefix     		= "web-server"
+	web_server_address_space 	= "1.0.0.0/22"
+	
+- now we need to add new parameters to the main body.
+	variable "resource_prefix" {}
+	variable "web_server_address_space" {}
+	
+- now we will add new resource for VNET
+resource "azurerm_virtual_network" "web_server_vnet" {
+	name = "${var.resource_prefix}-vnet"
+	location = "${var.web_server_location}"
+	resource_group_name = "${azurerm_resource_group.web_server_rg.name}"
+	address_space = ["${var.web_server_address_space}"]
+}
+
+----------------------------------
+
+Dependencies:
+
+example:
+
+resource "azurerm_resource_group" "web_server_rg" {
+  name      = "${var.web_server_rg}"
+}
+
+# No dependency
+resource "azurerm_virtual_network" "web_server_vnet" {
+	name                = "${var.resource_prefix}-vnet"
+	resource_group_name = "${var.web_server_rg}"
+}
+
+
+# Indirect dependency
+resource "azurerm_virtual_network" "web_server_vnet" {
+	name                = "${var.resource_prefix}-vnet"
+	resource_group_name = "${azurerm_resource_group.web_server_rg.name}"
+}
+
+# Direct dependency
+resource "azurerm_virtual_network" "web_server_vnet" {
+	name                = "${var.resource_prefix}-vnet"
+	resource_group_name = "${var.web_server_rg}"
+	depends_on			= "${azurerm_resource_group.web_server_rg}"
+}
+
+
+--------------------------------
+
+Azure Subnet:
+
+- let's add new parameter to terraform.tfvars
+
+web_server_address_prefix = "1.0.1.0/24"
+
+- add new variable the main body
+
+variable "web_server_address_prefix" {}
+
+-------------------------
+
+change:
+
+- to change anything using terraform just re apply and terraform will take care of the reset.
+- ex:
+	change the vnet name to vnet-v2
+	change web_server_address_prefix   = "1.0.1.0/24" to "1.0.2.0/24"
+	
+- change it back again.
+
+- u'll see that when u change the VNET it's actually destroy the old one and build new one.
+- when u change "web_server_address_prefix" it's actually update subnet only.
+
+--------------------------------------
+
+Azure Network Interface:
+-----------------------
+- it will include: 
+ i. subnet/VNET
+ ii. IP private and public
+ iii. static and dynamic
+ iv. DNS Setting
+ v. NSG
+ 
+- let's first add new parameter to "terraform.tfvars"
+ web_server_name = "web-01"
+ 
+- add new variable to main body
+ variable "web_server_name" {}
+ 
+- now we can add network interface resource
+
+--------------------------------------------
+
+- now we are going to add public ip
+
+- first thing we will add this line to the private ip part
+  public_ip_address_id          = "${azurerm_public_ip.web_sever_public_ip.id}"
+  
+- now we will add public ip
+resource "azurerm_public_ip" "web_server_public_ip" {
+  name                          = "${var.web_server_name}-public-ip"
+	location                      = "${var.web_server_location}"
+	resource_group_name           = "${azurerm_resource_group.web_server_rg.name}"
+  public_ip_address_allocation  = "dynamic"  
+}
+
+-------------------------------------------
+
+- Condition:
+
+- we will add new parameter to "terraform.tfvars"
+	environment = "production"
+	
+- we will add new variable to main body
+ variable "environment" {}
+
+- now we will add this condition in public ip part:
+
+public_ip_address_allocation  = "${var.environment == "production" ? "static" : "dynamic"}"
+
+--------------------------------------------
+
+- NSG: network security group
+- it's used for:
+ i. Traffic control
+ ii. default rules
+ iii. rules
+ iv. scope
+ 
+- first we need to create security group:
+resource "azurerm_network_security_group" "web_server_nsg" {
+  name                          = "${var.web_server_name}-nsg"
+	location                      = "${var.web_server_location}"
+	resource_group_name           = "${azurerm_resource_group.web_server_rg.name}"  
+}
+
+- now we will create rules:
+resource "azurerm_network_security_rule" "web_server_nsg_rule_rdp" {
+  name = "RDP Inbound"
+  priority = 100
+  direction = "Inbound"
+  access = "Allow"
+  protocol = "TCP"
+  source_port_range = "*"
+  destination_port_range = "3389"
+  source_address_prefix = "*"
+  destination_address_prefixes = "*"
+	resource_group_name  = "${azurerm_resource_group.web_server_rg.name}"
+  network_security_group_name = "${azurerm_network_security_group.web_server_nsg.name}"  
+}
+
+- now we need to associate the rule above to a network device.
+- we will add the line below in web_server_nic
+
+
+------------------------------------------------
+
+Terraform state:
+
+- state: is used by terraform to track deploied resources 
+- terraform install 2 files in ur terraform directory "terraform.tfstate and terraform.tfstate.backup"
+- in addition to the state terraform also store the metadata of internal stuff that terraform used.
+- stuff like dependencies, IDs as well caching small data to make terraform efficintly executed.
+- it can be stored either localy or remotely.
+- the purpose of storing files remotely is to share state with team, increase security - like access control or encryption on a remote system.
+- if you wanna more codes example go to "https://resources.azure.com/" 
+
+-------------------------------------------------
+
+Marketplace:
+- a repo where u can get a lot of good stuff like images.
+
+- login to az cli again
+> az login --service-principal -u %TF_VAR_client_id% -p %TF_VAR_client_secret% -t %TF_VAR_tenant_id%
+
+- now to get a list of images depending on location where must of publisher use location we need this command.
+> az vm image list-publishers -l westus2 -o table
+
+- to get only images by microsoft publisher:
+> az vm image list-offers -l westus2 -p MicrosoftWindowsServer -o table
+
+- to get skus
+> az vm image list-skus -l westus2 -p MicrosoftWindowsServer -f WindowsServer -o table
+
+-------------------------------------------------
+
+- Virtual Machine in azure:
+- in microsoft docs --> VM types and sizes
+ https://docs.microsoft.com/en-us/azure/virtual-machines/windows/sizes-general
+
+- to calculate price --> azure pricing calculating
+ https://azure.microsoft.com/en-us/pricing/calculator/
+ 
+- another way is to use az cli
+ > az vm list-sizes -l westus2 -o table
+
+
+--------------------------------------------------------------
+
+- using virtual machine:
+
+- vm: is an emulation server running in a physical server
+
+- now we will build a virtual server
+
+- to find the correct size:
+> az vm list-skus --location westus2 --size Standard --output table
+
+resource "azurerm_virtual_machine" "web_server" {
+  name                  = "${var.web_server_name}"
+  location              = "${var.web_server_location}"
+  resource_group_name   = "${azurerm_resource_group.web_server_rg.name}"
+  network_interface_ids = ["${azurerm_network_interface.web_server_nic.id}"]
+  vm_size               = "Standard_F2s_v2"
+
+  storage_image_reference {
+    publisher = "MicrosoftWindowsServer"
+    offer     = "WindowsServer"
+    sku       = "2016-Datacenter-Server-Core-smalldisk"
+    version   = "latest"
+  }
+
+  storage_os_disk {
+    name              = "${var.web_server_name}-os"
+    caching           = "ReadWrite"
+    create_option     = "FromImage"
+    managed_disk_type = "Standard_LRS"
+  }
+
+  os_profile {
+    computer_name   = "${var.web_server_name}"
+    admin_username  = "webserver"
+    admin_password  = "Passw0rd1234"
+  }
+
+  os_profile_windows_config {
+
+  }
+}
+
+
+- RDP to the vm using public ip and check OS parameter using the command in cli:
+> set
+
+
+-----------------------------------------
+
+- Availability:
+
+ i. high availability
+ ii. hardware
+ iii. fault domains
+ iv. update domains
+
+- add this code below:
+
+resource "azurerm_availability_set" "web_server_availability_set" {
+	name                        = "${var.resource_prefix}-availability-set"
+	location                    = "${var.web_server_location}"
+	resource_group_name         = "${azurerm_resource_group.web_server_rg.name}"
+  managed                     = true
+  platform_fault_domain_count = 2
+}
+
+- add the line code below to the virtual machine code block
+ > availability_set_id   = "${azurerm_availability_set.web_server_availability_set.id}"
+ 
+------------------------------------
+
+- count:
+
+- ex:
+
+resource "azurerm_virtual_machine" "web_server" {
+	name 					=	"${var.web_server_name}-${count.index}" 
+	network_interface_ids 	= 	["${azurerm_network_interface.web_server_nic.*.id[count.index]}"]
+	count 					= 	"${var.web_server_count}"
+}
+
+------------------------------------
+
+- functions:
+
+ "https://www.terraform.io/docs/configuration/interpolation.html"
+ 
+- ex:
+ now 	= "${timestamp()}"
+ server = "${var.web_server_name}-${format(%02d,count.index)}"
+ upper 	= "${upper(var.web_server_name)}"
+ 
+-------------------------------------
+
+- Math
+
+- ex:
+ server = "${var.web_server_name}-${format("%02d",count.index + 1)}"
+ server = "${var.web_server_name}-${format("%02d",count.index * 10)}"
+ server = "${var.web_server_name}-${format("%02d",count.index + 1) * 10}"
+ 
+
+- ex: we will create 2 servers by using count.
+
+- add this parameter to the "terraform.tfvars"
+ web_server_count            = 2
+ 
+- add this variable to the main body 
+ variable "web_server_count" {}
+ 
+- add this line code to the network block
+ count                     = "${var.web_server_count}"
+ 
+- add this line code to the public ip block:
+   count                         = "${var.web_server_count}"
+
+- add this line code to virtual block 
+ count                 = "${var.web_server_count}"
+ 
+
+--------------------------------------
+
+- Lists and counts
+
+- add the parameter below to terraform.tfvars
+ web_server_subnets          = ["1.0.1.0/24","1.0.2.0/24"]
+ 
+- add the variable below to the main 
+ variable "web_server_subnets" {}
+ 
+- this line code will be inserted in subnets
+ > -${substr(var.web_server_subnets[count.index], 0, length(var.web_server_subnets[count.index]) - 3)} "
+- this one also 
+ count                     = "${length(var.web_server_subnets)}"
+ 
+---------------------------------------
+
+- Controlling resources certain
+
+---------------------------------------
+
+- Logging and trubleshooting:
+
+---------------------------------------
+ 
+- Scale sets: it's allowed to create a group of machine (multiple servers) in combination with a load balancer.
+ i. high availability
+ ii. identical image
+ iii. demand
+ iv. schedule
+ v. updates
+ 
+resource "azurerm_virtual_machine_scale_set" "web_server" {
+  #name                  = "mytestscaleset-1"
+  name                  = "${var.web_server_name}-scale-set"
+  location              = "${var.web_server_location}"
+  resource_group_name   = "${azurerm_resource_group.web_server_rg.name}"
+  upgrade_policy_mode   = "manual"
+
+  sku{
+    name     = "Standard_F2s_v2"
+    #name    = "Standard_B1s"
+    tier     = "Standard"
+    capacity = "${var.web_server_count}"
+  }
+
+  storage_profile_image_reference {
+    publisher = "MicrosoftWindowsServer"
+    offer     = "WindowsServer"
+    sku       = "2016-Datacenter-Server-Core-smalldisk"
+    version   = "latest"
+  }
+
+  storage_profile_os_disk {
+    name              = ""
+    caching           = "ReadWrite"
+    create_option     = "FromImage"
+    managed_disk_type = "Standard_LRS"
+  }
+
+  os_profile {
+    computer_name_prefix  = "${var.web_server_name}"
+    admin_username        = "webserver"
+    admin_password        = "Passw0rd1234"
+  }
+
+  os_profile_windows_config {
+
+  }
+
+  network_profile {
+    name    = "web_server_network_profile"
+    primary = true
+
+    ip_configuration {
+      name      = "${var.web_server_name}"
+      primary   = true
+      subnet_id = "${azurerm_subnet.web_server_subnet.*.id[0]}"
+    }
+  }
+} 
+ 
+---------------------------------------
+
+- local variables: used whene there's something may be occurred serveral times for example.
+
+locals {
+  web_server_name = "${var.environment == "production" ? "${var.web_server_name}-prd" : "${var.web_server_name}-dev"}"
+}
+
+- so instead of using var.web_server_name for example we are going to use local.web_server_name
+
+- becarful the prefix must not exceed 9 chars.
+
+---------------------------------------
+
+- Tags: can be added to the majority of the resources to write some meta data.
+
+- add the parameter below to the "terraform.tfstate"
+ "terraform_script_version"  = "1.00"
+
+- add the variable below to the main body:
+ variable "terraform_script_version" {}
+
+- add another local variable 
+ build_environment = "${var.environment == "production" ? "production" : "development"}"
+ 
+- we need to add another code block in azurerm_resource_group:
+  tags {
+    environment       = "${local.build_environment}"
+    build_environment = "${var.terraform_script_version}"
+  }
+  
+-------------------------------------
+
+- azure load balancer: 
+i. standard \ basic: distrbuting traffic between active service by monitoring server health - algorthim to calculate load on back end servers.
+ii. traffic distrbution:  
+iii. backend pool: define private destination address of the service been load balanced - network interfaces can be added to the back end pool, scale sets automatically update the pool, when instances created or destroyed.
+iv.frontend ip: use for source communication could be internal or external.
+v. rules: used to define what protocol and pool will be load balanced. it's also glue together the front and the back end resource pool.
+vi. probes: used to test the backend services and make sure that they are operational, it can be work on TCP and http and https.
+
+- add new parameter to the terraform.tfvars 
+ domain_name_label           = "learning-mustafa-web"
+ 
+- add new variable to the main body 
+ variable "domain_name_label"{}
+ 
+- change the code line below "azurerm_subnet":
+network_security_group_id = "${count.index == 0 ? "${azurerm_network_security_group.web_server_nsg.id}" : ""}"
+
+- another change need to be made
+ change "web_server_public_ip" to "web_server_lb_public_ip"
+ 
+- as well add this code line in the block above
+  domain_name_label             = "${var.domain_name_label}
+  
+- change block name from "web_server_nsg_rule_rdp" to "web_server_nsg_rule_http"
+
+
+resource "azurerm_lb" "web_sever_lb" {
+	name                = "${var.resource_prefix}-lb"
+	location            = "${var.web_server_location}"
+	resource_group_name = "${azurerm_resource_group.web_server_rg.name}"
+
+  frontend_ip_configuration{
+    name                  = "${var.resource_prefix}-lb-frontend-ip"
+    public_ip_address_id  = "${azurerm_public_ip.web_server_lb_public_ip.id}"
+  }  
+  
+}
+
+resource "azurerm_lb_backend_address_pool" "web_server_lb_backend_pool" {
+  name                = "${var.resource_prefix}-lb-backend-pool"
+  resource_group_name = "${azurerm_resource_group.web_server_rg.name}"
+  loadbalancer_id     = "${azurerm_lb.web_sever_lb.id}"
+}
+
+resource "azurerm_lb_probe" "web_server_lb_http_probe" {
+  name                = "${var.resource_prefix}-lb-http-prob"
+  resource_group_name = "${azurerm_resource_group.web_server_rg.name}"
+  loadbalancer_id     = "${azurerm_lb.web_sever_lb.id}"
+  protocol            = "tcp"
+  port                = "80"
+}
+
+resource "azurerm_lb_rule" "web_server_lb_http_rule" {
+  name                            = "${var.resource_prefix}-lb-http-probe"
+  resource_group_name             = "${azurerm_resource_group.web_server_rg.name}"
+  loadbalancer_id                 = "${azurerm_lb.web_sever_lb.id}"
+  protocol                        = "tcp"
+  frontend_port                   = "80"
+  backend_port                    = "80"
+  frontend_ip_configuration_name  = "${var.resource_prefix}-lb-frontend-ip"
+  probe_id                        = "${azurerm_lb_probe.web_server_lb_http_probe.id}"
+  backend_address_pool_id         = "${azurerm_lb_backend_address_pool.web_server_lb_backend_pool.id}"
+}
+-------------------------------------
+
+- Azure VM Extensions: it's a small application that run ones the vm had been built as a part of post deployment. 
+- there are a large number of extensions available to perfome all kind of configuration and agent installation, performing power-shell script configure vm using puppet or cheef or installing software agents.
+
+- the only required is to install "azure windows agent" where it been installed by terraform 
+
+ 
+
+
+- to list all available extension:
+ > az vm extension image list -l westus2 -o table
+ > az vm extension image list-names -l westus2 -p Microsoft.Compute -o table
+ > az vm extension image list-versions -l westus2 -p Microsoft.Compute -n CustomScriptExtension -o table
+ 
+- change the code block in "azurerm_virtual_machine_scale_set"
+
+os_profile_windows_config {
+
+} 
+
+ to be 
+ 
+os_profile_windows_config {
+	provision_vm_agent = true
+}
+
+- again in "azurerm_virtual_machine_scale_set" add the code block:
+
+- use this url as artifacts
+
+  extension{
+    name                  = "${local.web_server_name}-extension"
+    publisher             = "Microsoft.Compute"
+    type                  = "CustomScriptExtension"
+    type_handler_version  = "1.9"
+
+    settings = <<SETTINGS
+    {
+      "fileUris": ["https://raw.githubusercontent.com/mustafakamil12/learning/master/azureInstallWebServer.ps1"],
+      "commandToExecute": "start powershell -ExecutionPolicy Unrestricted -File azureInstallWebServer.ps1"
+    }
+    SETTINGS
+  }
+}
+
+- copy the ip of the load balancer and past it at the broweser.
+
+- refresh the page u will see another private ip 
+
+---------------------------------------
+
+- importing existing azure resources:
+
+- it's used to managed monitor and destroy resources by terraform.
+
+- remove local variables
+
+- remove anything after the subnet code block
+
+- remove everything in rg except name and change the code block from resourse to data
+
+- change the line in the vnet block 
+ resource_group_name = "${data.azurerm_resource_group.web_server_rg.name}"
+ 
+- change the subnet code block
+
+resource "azurerm_subnet" "web_server_subnet" {
+  name                      = "testsubnet"
+  resource_group_name       = "${data.azurerm_resource_group.web_server_rg.name}"
+  virtual_network_name      = "${azurerm_virtual_network.web_server_vnet.name}"
+  address_prefix            = "1.0.3.0/24"
+ }  
+ 
+- remove these files from project directory and move it to another directory coz u'll need them later:
+ i. terraform.tfstate.backup
+ ii. terraform.tfstate
+ 
+- now we need to get azure resources id that we need to import 
+ > go to the "https://resources.azure.com/"
+ 
+- copy /subscriptions/fa7fcc6e-4afc-4efe-9810-c457a5b9edc6/resourceGroups/web-rg/providers/Microsoft.Network/virtualNetworks/web-server-vnet
+
+- in the terraform 
+ > terraform import azurerm_virtual_network.web_server_vnet /subscriptions/fa7fcc6e-4afc-4efe-9810-c457a5b9edc6/resourceGroups/web-rg/providers/Microsoft.Network/virtualNetworks/web-server-vnet
+ 
+- terraform plan
+
+- terraform apply
+
+-----------------------------
+
+terraform lifecycle:
+
+- to prevent destroy a specific resource for example in the vnet, add in vnet 
+
+lifecycle{
+  prevent_destroy = true
+}
+
+to be like this:
+
+resource "azurerm_virtual_network" "web_server_vnet" {
+	name                = "${var.resource_prefix}-vnet"
+	location            = "${var.web_server_location}"
+	resource_group_name = "${data.azurerm_resource_group.web_server_rg.name}"
+	address_space       = ["${var.web_server_address_space}"]
+
+lifecycle{
+  prevent_destroy = true
+}
+}
+
+- to force removing this resource we can use the code below:
+ > terraform state rm azurerm_virtual_network.web_server_vnet
+ 
+- which remove only the updated part, subnet.
+
+- in previous note "importing existing azure resources" we remove parts from the main body and import existing azure resource from azure itself, now if we need to destroy this infrastructure, we need will find that the terraform will destroy only the affected part which is the subnet. so we will destroy the step by step.
+
+-----------------------------------------------
+
+- Modules: piece of code can be reused in multiple deployments. They can also be used within a  single deployment.
+- Modules can be used from a number of sources such as:
+ i. local path's 
+ ii. get repositories 
+ iii. http 
+ iv. https
+ v. terraform registry.
+ 
+- Terraform registry:  There are 
+ i. public : is only available to enterprise customers.
+ ii. private registries available.
+ 
+- The root module: is considered to be the code in the working folder. Typically main.tf
+
+---------------------------------------------
+
+- refactoring into module.
+
+- create folder and named it "location"
+- copy maint.tf to the location folder and name it as location.tf
+
+- remove SPN variables from locataion.tf as well provider block code.
+
+- in scale_set change the line code below:
+ from -- > name                  = "${local.web_server_name}-scale-set"
+ to --> name                  = "${var.resource_prefix}-scale-set"
+ 
+- from main body remove these variables:
+ i. variable "web_server_location" {}
+ ii. variable "web_server_address_space" {}
+ ii. variable "web_server_subnets" {
+		type = "list"
+	}
+	
+- in terraform.tfvars remove the parameters:
+ i. web_server_location         = "westus2"     #location
+ ii. web_server_address_space 	= "1.0.0.0/22"  # the ip range that will be used
+ iii. web_server_subnets          = ["1.0.1.0/24","1.0.2.0/24"]
+ 
+- in main body remove everything after provider.
+
+- now we need to add module as below:
+module "location_us2w" {
+  source = "./location"
+  
+  web_server_location       = "westus2"
+  web_server_rg             = "${var.web_server_rg}-us2w"
+  resource_prefix           = "${var.resource_prefix}-us2w"
+  web_server_address_space  = "1.0.0.0/22"
+  web_server_name           = "${var.web_server_name}"
+  environment               = "${var.environment}"
+  web_server_count          = "${var.web_server_count}"
+  web_server_subnets        = ["1.0.1.0/24","1.0.2.0/24"]
+  domain_name_label         = "${var.domain_name_label}"
+  terraform_script_version  = "${var.terraform_script_version}"
+}
+
+- terraform init
+- terraform plan
+- terraform apply
+
+- create another module
+
+module "location_eu1w" {
+  source = "./location"
+  
+  web_server_location       = "westeurope"
+  web_server_rg             = "${var.web_server_rg}-eu1w"
+  resource_prefix           = "${var.resource_prefix}-eu1w"
+  web_server_address_space  = "2.0.0.0/22"
+  web_server_name           = "${var.web_server_name}"
+  environment               = "${var.environment}"
+  web_server_count          = "${var.web_server_count}"
+  web_server_subnets        = ["2.0.1.0/24","2.0.2.0/24"]
+  domain_name_label         = "${var.domain_name_label}"
+  terraform_script_version  = "${var.terraform_script_version}"
+}
+
+- terraform init
+- terraform plan
+- terraform apply
+
+----------------------------------------------
+
+- Model output: we are going to add output to our module
+
+- create new file "output.tf" in "location" folder.
+
+- we will add these lines:
+
+output "web_server_rg_name" {
+  value = "${azurerm_resource_group.web_server_rg.name}"
+}
+
+output "web_server_lb_public_ip_id" {
+  value = "${azurerm_public_ip.web_server_lb_public_ip.id}"
+}
+
+output "web_server_vnet_id" {
+  value = "${azurerm_virtual_network.web_server_vnet.id}"
+}
+
+output "web_server_vnet_name" {
+  value = "${azurerm_virtual_network.web_server_vnet.name}"
+}
+
+
+-----------------------------------------
+
+- Azure traffic manager: 
+ i. it's a DNS based load balancer
+ ii. it's allow distribute traffic to geographically base services 
+ iii. these services refered as endpoints
+
+- Endpoints : it's any interface facing services, it's not limited to azure services, it can be porvided by any service provider.
+
+- monitoring: it's similar to a load balancer probe however in traffic manager monitoring provides more options for more comprehensive end point checking.
+
+- routing: 
+Rooting options can be based on priority waiting.
+
+Performance and geography.
+
+- the code required for traffic monitoring:
+
+
+	resource "azurerm_traffic_manager_profile" "traffic_manager" {
+	  name                    = "${var.resource_prefix}-traffic-manager"
+	  resource_group_name     = "${module.location_us2w.web_server_rg_name}"
+	  traffic_routing_method  = "Weighted"
+
+	  dns_config{
+		relative_name = "${var.domain_name_label}"
+		ttl           = 100
+	  }
+
+	  monitor_config {
+		protocol = "http"
+		port = 80
+		path = "/"
+	  }
+	}
+
+
+	resource "azurerm_traffic_manager_endpoint" "traffic_manager_us2w" {
+	  name                = "${var.resource_prefix}-us2w-endpoint"
+	  resource_group_name = "${module.location_us2w.web_server_rg_name}"
+	  profile_name        = "${azurerm_traffic_manager_profile.traffic_manager.name}"
+	  target_resource_id  = "${module.location_us2w.web_server_lb_public_ip_id}"
+	  type                = "azureEndpoints"
+	  weight              = 100
+	}
+
+	resource "azurerm_traffic_manager_endpoint" "traffic_manager_eu1w" {
+	  name                = "${var.resource_prefix}-eu1w-endpoint"
+	  resource_group_name = "${module.location_us2w.web_server_rg_name}"
+	  profile_name        = "${azurerm_traffic_manager_profile.traffic_manager.name}"
+	  target_resource_id  = "${module.location_eu1w.web_server_lb_public_ip_id}"
+	  type                = "azureEndpoints"
+	  weight              = 100
+	}
+
+-------------------------------------------
+
+- Azure VNET peering: 
+- we are going to create a vnet for a jump server and we going to create a vnet peering to connect this vnet to each of the location.
+
+- what is VNET peering: allows vnets to be seamlessly connected.
+- when a VNET peered the will behave as a single network.
+- can be paired with in a location or globally using global pheno peering. 
+- All traffic is private. This is carried over Microsoft's backbone Microsoft backbone provide to secure high bandwidth low latency network.
+
+- add new parameters to the "terraform.tfvars"
+
+	jump_server_location        = "westeurope"
+	jump_server_prefix          = "jump-server-eu1w"
+	jump_server_name            = "jump-eu1w"
+
+- add new variables to the main body:
+
+	variable "jump_server_location" {}
+	variable "jump_server_prefix" {}   
+	variable "jump_server_name" {}  
+	
+	
+- add the code below to main body.
+
+
+resource "azurerm_resource_group" "jump_server_rg" {
+  name      = "${var.jump_server_prefix}-rg"
+  location  = "${var.jump_server_location}"
+}
+
+resource "azurerm_virtual_network" "jump_server_vnet" {
+  name                = "${var.jump_server_prefix}-vnet"
+  location            = "${var.jump_server_location}"
+  resource_group_name = "${azurerm_resource_group.jump_server_rg.name}"
+  address_space       = ["3.0.0.0/24"]
+}
+
+resource "azurerm_subnet" "jump_server_subnet" {
+  name                  = "${var.jump_server_prefix}-3.0.0.0-subnet"
+  resource_group_name   = "${azurerm_resource_group.jump_server_rg.name}"
+  virtual_network_name  = "${azurerm_virtual_network.jump_server_vnet.name}"
+  address_prefix        = "3.0.0.0/24"
+}
+
+#first location peering
+resource "azurerm_virtual_network_peering" "jump_server_peer_web_us2w" {
+  name                         = "jump-eu1w-peer-web-us2w"
+  resource_group_name          = "${azurerm_resource_group.jump_server_rg.name}"
+  virtual_network_name         = "${azurerm_virtual_network.jump_server_vnet.name}"
+  remote_virtual_network_id    = "${module.location_us2w.web_server_vnet_id}"
+  allow_virtual_network_access = true
+  depends_on                   = ["azurerm_subnet.jump_server_subnet"]
+}
+
+resource "azurerm_virtual_network_peering" "web_us2w_peer_jump_server" {
+  name                         = "web-us2w-peer-jump-eu1w"
+  resource_group_name          = "${module.location_us2w.web_server_rg_name}"
+  virtual_network_name         = "${module.location_us2w.web_server_vnet_name}"
+  remote_virtual_network_id    = "${azurerm_virtual_network.jump_server_vnet.id}"
+  allow_virtual_network_access = true
+  depends_on                   = ["azurerm_subnet.jump_server_subnet"]
+}
+
+
+#second location peering
+resource "azurerm_virtual_network_peering" "jump_server_peer_web_eu1w" {
+  name                         = "jump-eu1w-peer-web-eu1w"
+  resource_group_name          = "${azurerm_resource_group.jump_server_rg.name}"
+  virtual_network_name         = "${azurerm_virtual_network.jump_server_vnet.name}"
+  remote_virtual_network_id    = "${module.location_eu1w.web_server_vnet_id}"
+  allow_virtual_network_access = true
+  depends_on                   = ["azurerm_subnet.jump_server_subnet"]
+}
+
+resource "azurerm_virtual_network_peering" "web_eu1w_peer_jump_server" {
+  name                         = "web-eu1w-peer-jump-eu1w"
+  resource_group_name          = "${module.location_eu1w.web_server_rg_name}"
+  virtual_network_name         = "${module.location_eu1w.web_server_vnet_name}"
+  remote_virtual_network_id    = "${azurerm_virtual_network.jump_server_vnet.id}"
+  allow_virtual_network_access = true
+  depends_on                   = ["azurerm_subnet.jump_server_subnet"]
+}
+
+	
+---------------------------------------------	
+	
+- Jump server.
+
+- if u r using free subscription please becarful u allowed for 4 instances.
+- change web_server_count = 1 in "terraform.tfvars
+- from section 5 copy everything after "azurerm_network_interface" and past it on main body.
+- change the reference from web_server to jump_server. in the new copied code.
+- copy the jump server public ip
+- rdp to the jump server 
+- copy the public ip of the web server public ip, and brows it 
+- copy the ip of the server and rdp to it through the jump server
+- shutdown the server. > shutdown/s
+- in traffic manager configuration u can see the interval duration and how many times to declare server as failed.
+- End of the course
+-----------------------------------------------
+
+- Additional lessons: 
+
+- remote state and configuration.
+
+	
