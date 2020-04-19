@@ -32,12 +32,14 @@ iv. subscription_id --> subscription --> id
 
 					
 - at this point we create spn but we didn't give it any authority.
-- --> access control (IAM) --> add --> --- Role: contributer
-										|- Assign access to: Azure AD user, gorup ...
-										|- select: terraform 
+- subscriptions --> access control (IAM) --> add -->.-- Role: contributer
+													|- Assign access to: Azure AD user, gorup ...
+													|- select: terraform 
 										
 
 - now we will check how to use provider:
+
+- azurerm = azure resource manager.
 
 provider "azurerm"{
     version         = "1.27"
