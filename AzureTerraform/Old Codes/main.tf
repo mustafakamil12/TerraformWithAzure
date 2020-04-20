@@ -56,7 +56,7 @@ resource "azurerm_subnet" "web_server_subnet" {
   virtual_network_name      = "${azurerm_virtual_network.web_server_vnet.name}"
   address_prefix            = "${var.web_server_subnets[count.index]}"
   network_security_group_id = "${count.index == 0 ? "${azurerm_network_security_group.web_server_nsg.id}" : ""}"
-  count                     = "${length(var.web_server_subnets)}" # this lind had been add after adding web_server_subnets
+  count                     = "${length(var.web_server_subnets)}" # this line had been add after adding web_server_subnets
 }
 
 
