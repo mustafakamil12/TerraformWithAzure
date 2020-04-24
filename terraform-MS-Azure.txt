@@ -529,9 +529,17 @@ resource "azurerm_virtual_machine" "web_server" {
 - this one also 
  count                     = "${length(var.web_server_subnets)}"
  
+- substr(string, offset, length)  <-- This is the function formula
+ 
 ---------------------------------------
 
-- Controlling resources certain
+- Controlling resources creation:
+
+- it's away about how to controll creation the different resources.
+
+- for example create or not nsg rules
+
+count = var.environment == "production" ? 0 : 1
 
 ---------------------------------------
 
