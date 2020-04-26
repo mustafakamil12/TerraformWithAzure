@@ -692,7 +692,7 @@ resource "azurerm_lb_probe" "web_server_lb_http_probe" {
 }
 
 resource "azurerm_lb_rule" "web_server_lb_http_rule" {
-  name                            = "${var.resource_prefix}-lb-http-probe"
+  name                            = "${var.resource_prefix}-lb-http-rule"
   resource_group_name             = "${azurerm_resource_group.web_server_rg.name}"
   loadbalancer_id                 = "${azurerm_lb.web_sever_lb.id}"
   protocol                        = "tcp"
@@ -843,7 +843,7 @@ lifecycle{
 - refactoring into module.
 
 - create folder and named it "location"
-- copy maint.tf to the location folder and name it as location.tf
+- copy main.tf to the location folder and name it as location.tf
 
 - remove SPN variables from locataion.tf as well provider block code.
 
@@ -992,8 +992,8 @@ Performance and geography.
 - we are going to create a vnet for a jump server and we going to create a vnet peering to connect this vnet to each of the location.
 
 - what is VNET peering: allows vnets to be seamlessly connected.
-- when a VNET peered the will behave as a single network.
-- can be paired with in a location or globally using global pheno peering. 
+- when a VNET peered they will behave as a single network.
+- can be paired with in a location or globally using global vnet peering. 
 - All traffic is private. This is carried over Microsoft's backbone Microsoft backbone provide to secure high bandwidth low latency network.
 
 - add new parameters to the "terraform.tfvars"
